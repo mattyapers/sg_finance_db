@@ -21,21 +21,21 @@ st.set_page_config(
 
 # Colour palette (consistent across all charts)
 C = {
-    "expenses":   "#D85A30",
-    "core":       "#185FA5",
-    "satellite":  "#1D9E75",
-    "savings":    "#639922",
-    "srs":        "#BA7517",
-    "buffer":     "#B4B2A9",
-    "cpf":        "#888780",
-    "bg":         "#F8F7F4",
-    "accent":     "#162447",
+    "expenses":  "#DC2626",   # red-600
+    "core":      "#2563EB",   # blue-600
+    "satellite": "#059669",   # emerald-600
+    "savings":   "#7C3AED",   # violet-600
+    "srs":       "#D97706",   # amber-600
+    "buffer":    "#9CA3AF",   # gray-400
+    "cpf":       "#4B5563",   # gray-600
+    "bg":        "#F8F7F4",
+    "accent":    "#1E3A5F",
 }
 
 # Cycling palette for dynamic expense slices in the pie chart
 EXPENSE_PALETTE = [
-    "#D85A30", "#C04A20", "#E07B5A", "#A03918",
-    "#E89C84", "#802810", "#F0BDAE",
+    "#DC2626", "#2563EB", "#059669",
+    "#7C3AED", "#D97706", "#0891B2", "#9CA3AF",
 ]
 
 # ─── Session state: dynamic expense items ────────────────────────────────────
@@ -205,15 +205,47 @@ st.title("💹 SG Financial Dashboard")
 st.caption("Singapore salary budget optimiser · SRS tax planner · long-term projections")
 
 # Hero metrics
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Take-home / mo", f"S${take_home_mo:,.0f}", help="After CPF + side income")
-c2.metric("Savings rate", f"{savings_rate:.1%}", help="(Income − expenses) ÷ income")
-c3.metric("Monthly buffer", f"S${buffer_mo:,.0f}",
-          delta=f"{'healthy' if buffer_mo > 150 else 'thin'}")
-c4.metric("Tax saved / yr", f"S${tax_saved_annual:,.0f}",
-          help=f"Marginal rate: {marginal_rate:.1%}")
-c5.metric(f"SRS value at {retirement_age}", f"S${srs_fv/1000:,.0f}k",
-          help=f"{years_to_retire} years at {cagr_pct}% CAGR")
+raw_saving = take_home_mo - total_expenses
+
+if buffer_mo > 150:
+    buf_label, buf_color = "healthy", "normal"
+elif buffer_mo >= 0:
+    buf_label, buf_color = "thin", "off"
+else:
+    buf_label, buf_color = "over-allocated", "inverse"
+
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1.metric("Take-home / mo", f"S${take_home_mo:,.0f}", help="After CPF deduction + side income")
+c2.metric(
+    "Savings rate", f"{savings_rate:.1%}",
+    delta=f"S${raw_saving:,.0f} / mo",
+    delta_color="normal",
+    help="(Take-home − total expenses) ÷ take-home",
+)
+c3.metric(
+    "Monthly buffer", f"S${buffer_mo:,.0f}",
+    delta=buf_label,
+    delta_color=buf_color,
+    help=(
+        "What remains after all planned spending and investments. "
+        "Healthy = S$150+/mo · Thin = S$0–149 · Over-allocated = negative "
+        "(planned outflows exceed take-home)."
+    ),
+)
+c4.metric(
+    "Tax (no SRS)", f"S${tax_before:,.0f}",
+    help="Annual income tax before any SRS contribution",
+)
+c5.metric(
+    "Tax (with SRS)", f"S${tax_after:,.0f}",
+    delta=f"−S${tax_saved_annual:,.0f} saved",
+    delta_color="inverse",
+    help=f"After S${srs_annual:,} SRS contribution · Marginal rate: {marginal_rate:.1%}",
+)
+c6.metric(
+    f"SRS value at {retirement_age}", f"S${srs_fv/1000:,.0f}k",
+    help=f"{years_to_retire} years at {cagr_pct}% CAGR",
+)
 
 st.markdown("---")
 
@@ -309,7 +341,7 @@ fig_srs.add_trace(go.Scatter(
     x=df_proj["year"], y=df_proj["SRS value"],
     name="SRS value", fill="tozeroy",
     line=dict(color=C["srs"], width=2),
-    fillcolor="rgba(186,117,23,0.10)",
+    fillcolor="rgba(217,119,6,0.10)",
 ))
 fig_srs.add_trace(go.Scatter(
     x=df_proj["year"], y=df_proj["Total contributed"],
@@ -411,7 +443,7 @@ fig_cmp.add_trace(go.Scatter(
     x=ages, y=srs_vals,
     name=f"SRS @ {cagr_pct}% (invested)",
     line=dict(color=C["srs"], width=2),
-    fill="tozeroy", fillcolor="rgba(186,117,23,0.08)",
+    fill="tozeroy", fillcolor="rgba(217,119,6,0.08)",
 ))
 fig_cmp.add_trace(go.Scatter(
     x=ages, y=cpf_vals,

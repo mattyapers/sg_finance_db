@@ -34,8 +34,9 @@ Expense rows in the sidebar are managed via `st.session_state.expense_items` (a 
 - CPF SA comparison benchmark: 4% guaranteed
 
 **Chart color palette** (used consistently across all Plotly figures):
-- Expenses: `#D85A30`, Core investing: `#185FA5`, Satellite: `#1D9E75`
-- Savings: `#639922`, SRS: `#BA7517`, CPF: `#888780`, Buffer: `#B4B2A9`
+- Expenses: `#DC2626`, Core: `#2563EB`, Satellite: `#059669`, Savings: `#7C3AED`
+- SRS: `#D97706`, Buffer: `#9CA3AF`, CPF: `#4B5563`
+- Investment bars cycle through `INVEST_PALETTE`; expense pie slices cycle through `EXPENSE_PALETTE`
 
 ## Code Style
 

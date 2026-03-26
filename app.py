@@ -32,10 +32,14 @@ C = {
     "accent":    "#1E3A5F",
 }
 
-# Cycling palette for dynamic expense slices in the pie chart
+# Cycling palettes for dynamic pie slices and investment bars
 EXPENSE_PALETTE = [
     "#DC2626", "#2563EB", "#059669",
     "#7C3AED", "#D97706", "#0891B2", "#9CA3AF",
+]
+INVEST_PALETTE = [
+    "#2563EB", "#059669", "#7C3AED",
+    "#0891B2", "#D97706", "#4B5563",
 ]
 
 # ─── Session state: dynamic expense items ────────────────────────────────────
@@ -49,6 +53,14 @@ if "expense_items" not in st.session_state:
         {"id": 4, "label": "Utilities"},
     ]
     st.session_state._next_expense_id = 5
+
+# ─── Session state: dynamic investment allocations ───────────────────────────
+if "invest_items" not in st.session_state:
+    st.session_state.invest_items = [
+        {"id": 1, "label": "Core investing"},
+        {"id": 2, "label": "Savings"},
+    ]
+    st.session_state._next_invest_id = 3
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # SIDEBAR — all inputs live here
@@ -73,7 +85,7 @@ with st.sidebar:
 
     # Dynamic expense rows: label (editable) | amount | remove button
     # UI extension point: add drag-to-reorder, category tags, or recurring vs one-off flags
-    to_delete = None
+    to_delete_exp = None
     for item in st.session_state.expense_items:
         uid = item["id"]
         col_l, col_v, col_d = st.columns([2, 1.5, 0.4])
@@ -90,14 +102,16 @@ with st.sidebar:
                 label_visibility="collapsed",
             )
         with col_d:
+            # Spacer matches the collapsed-label height so the button sits inline with inputs
+            st.markdown('<div style="margin-top:1.9rem"></div>', unsafe_allow_html=True)
             if st.button("✕", key=f"ed_{uid}", help="Remove"):
-                to_delete = uid
+                to_delete_exp = uid
 
-    if to_delete is not None:
+    if to_delete_exp is not None:
         st.session_state.expense_items = [
-            x for x in st.session_state.expense_items if x["id"] != to_delete
+            x for x in st.session_state.expense_items if x["id"] != to_delete_exp
         ]
-        for k in [f"el_{to_delete}", f"ev_{to_delete}", f"ed_{to_delete}"]:
+        for k in [f"el_{to_delete_exp}", f"ev_{to_delete_exp}", f"ed_{to_delete_exp}"]:
             st.session_state.pop(k, None)
         st.rerun()
 
@@ -116,9 +130,47 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Investment allocations**")
-    core_invest_mo = st.number_input("Core investing / month (S$)", 0, 5_000, 0, 50)
-    sat_invest_mo  = st.number_input("Satellite investing / month (S$)", 0, 2_000, 0, 50)
-    savings_mo     = st.number_input("Savings / month (S$)", 0, 5_000, 0, 50)
+
+    to_delete_inv = None
+    for item in st.session_state.invest_items:
+        uid = item["id"]
+        col_l, col_v, col_d = st.columns([2, 1.5, 0.4])
+        with col_l:
+            st.text_input(
+                "Label", key=f"il_{uid}",
+                value=item["label"],
+                label_visibility="collapsed",
+            )
+        with col_v:
+            st.number_input(
+                "S$", 0, 10_000, 0, 50,
+                key=f"iv_{uid}",
+                label_visibility="collapsed",
+            )
+        with col_d:
+            st.markdown('<div style="margin-top:1.9rem"></div>', unsafe_allow_html=True)
+            if st.button("✕", key=f"irm_{uid}", help="Remove"):
+                to_delete_inv = uid
+
+    if to_delete_inv is not None:
+        st.session_state.invest_items = [
+            x for x in st.session_state.invest_items if x["id"] != to_delete_inv
+        ]
+        for k in [f"il_{to_delete_inv}", f"iv_{to_delete_inv}", f"irm_{to_delete_inv}"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    if st.button("＋ Add allocation"):
+        new_id = st.session_state._next_invest_id
+        st.session_state._next_invest_id += 1
+        st.session_state.invest_items.append({"id": new_id, "label": "New allocation"})
+        st.rerun()
+
+    invest_items = {
+        st.session_state.get(f"il_{item['id']}", item["label"]): st.session_state.get(f"iv_{item['id']}", 0)
+        for item in st.session_state.invest_items
+    }
+    total_invest_mo = sum(invest_items.values())
 
     st.markdown("---")
     st.markdown("**SRS settings**")
@@ -168,14 +220,13 @@ ci_after_srs     = max(0, ci_before_srs - srs_annual)
 tax_before       = calc_tax(ci_before_srs)
 tax_after        = calc_tax(ci_after_srs)
 tax_saved_annual = tax_before - tax_after
-tax_saved_mo     = tax_saved_annual / 12
 
-# Marginal rate approximation; fall back to lowest bracket when SRS is 0
+# Marginal rate approximation; fall back to 0 when SRS is 0
 marginal_rate    = tax_saved_annual / srs_annual if srs_annual > 0 else 0.0
 
-savings_rate     = (take_home_mo - total_expenses) / take_home_mo if take_home_mo > 0 else 0
-total_deployed   = total_expenses + core_invest_mo + sat_invest_mo + savings_mo + (srs_annual / 12)
-buffer_mo        = take_home_mo - total_deployed
+savings_rate   = (take_home_mo - total_expenses) / take_home_mo if take_home_mo > 0 else 0
+total_deployed = total_expenses + total_invest_mo + (srs_annual / 12)
+buffer_mo      = take_home_mo - total_deployed
 
 # SRS compound growth to retirement age 63
 retirement_age    = 63
@@ -187,10 +238,10 @@ total_tax_saved   = tax_saved_annual * years_to_retire
 net_cost          = total_contributed - total_tax_saved
 
 # Withdrawal model: 50% taxable, spread over 10 years at age 63
-annual_withdrawal  = srs_fv / 10
-taxable_per_yr     = annual_withdrawal * 0.50
-withdrawal_tax     = calc_tax(taxable_per_yr) * 10
-net_srs_after_tax  = srs_fv - withdrawal_tax
+annual_withdrawal = srs_fv / 10
+taxable_per_yr    = annual_withdrawal * 0.50
+withdrawal_tax    = calc_tax(taxable_per_yr) * 10
+net_srs_after_tax = srs_fv - withdrawal_tax
 
 if net_cost > 0 and years_to_retire > 0:
     eff_return = (pow(net_srs_after_tax / net_cost, 1 / years_to_retire) - 1) * 100
@@ -255,16 +306,16 @@ col_left, col_right = st.columns([1.4, 1])
 with col_left:
     st.markdown("#### Monthly cash flow")
 
-    budget_labels = ["Expenses", "Core investing", "Satellite", "Savings", "SRS (monthly)", "Buffer"]
-    budget_values = [
-        total_expenses,
-        core_invest_mo,
-        sat_invest_mo,
-        savings_mo,
-        srs_annual / 12,
-        max(buffer_mo, 0),
-    ]
-    budget_colors = [C["expenses"], C["core"], C["satellite"], C["savings"], C["srs"], C["buffer"]]
+    n_inv          = len(invest_items)
+    inv_bar_colors = [INVEST_PALETTE[i % len(INVEST_PALETTE)] for i in range(n_inv)]
+
+    budget_labels = ["Expenses"] + list(invest_items.keys()) + ["SRS (monthly)", "Buffer"]
+    budget_values = (
+        [total_expenses]
+        + list(invest_items.values())
+        + [srs_annual / 12, max(buffer_mo, 0)]
+    )
+    budget_colors = [C["expenses"]] + inv_bar_colors + [C["srs"], C["buffer"]]
 
     fig_budget = go.Figure(go.Bar(
         x=budget_values,
@@ -276,9 +327,10 @@ with col_left:
         cliponaxis=False,
     ))
     fig_budget.update_layout(
-        height=280, margin=dict(l=0, r=60, t=10, b=10),
-        xaxis=dict(title="S$ / month", gridcolor="#EEEEEE"),
-        yaxis=dict(autorange="reversed"),
+        height=max(280, 60 + len(budget_labels) * 40),
+        margin=dict(l=10, r=90, t=10, b=10),
+        xaxis=dict(title="S$ / month", gridcolor="#EEEEEE", automargin=True),
+        yaxis=dict(autorange="reversed", automargin=True),
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         font=dict(size=12),
     )
@@ -301,7 +353,7 @@ with col_right:
         textfont_size=11,
     ))
     fig_pie.update_layout(
-        height=280, margin=dict(l=0, r=0, t=10, b=10),
+        height=280, margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         annotations=[dict(text=f"S${total_expenses:,.0f}<br>/mo", x=0.5, y=0.5,
@@ -354,11 +406,11 @@ fig_srs.add_trace(go.Scatter(
     line=dict(color=C["savings"], width=1.5, dash="dot"),
 ))
 fig_srs.update_layout(
-    height=320, margin=dict(l=0, r=0, t=10, b=10),
+    height=320, margin=dict(l=10, r=20, t=40, b=10),
     xaxis=dict(title="Age", gridcolor="#EEEEEE"),
-    yaxis=dict(title="S$", gridcolor="#EEEEEE", tickformat=",.0f"),
+    yaxis=dict(title="S$", gridcolor="#EEEEEE", tickformat=",.0f", automargin=True),
     plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     hovermode="x unified",
 )
 st.plotly_chart(fig_srs, use_container_width=True)
@@ -371,22 +423,26 @@ col_tax, col_gross = st.columns([1, 1.3])
 with col_tax:
     st.markdown("#### Tax impact of SRS")
 
+    y_max = max(tax_before, tax_after, 1) * 1.35
+
     fig_tax = go.Figure(go.Bar(
         x=["Without SRS", "With SRS"],
         y=[tax_before, tax_after],
         marker_color=[C["expenses"], C["savings"]],
         text=[f"S${tax_before:,.0f}", f"S${tax_after:,.0f}"],
         textposition="outside",
+        cliponaxis=False,
     ))
     fig_tax.add_annotation(
-        x=0.5, y=max(tax_before, tax_after) * 1.1,
+        x=0.5, y=y_max * 0.92,
         text=f"<b>Save S${tax_saved_annual:,.0f}/yr</b>",
         showarrow=False, font=dict(size=13, color=C["savings"]),
-        xref="paper",
+        xref="paper", yref="y",
     )
     fig_tax.update_layout(
-        height=280, margin=dict(l=0, r=0, t=30, b=10),
-        yaxis=dict(title="Annual tax (S$)", gridcolor="#EEEEEE"),
+        height=300, margin=dict(l=10, r=10, t=20, b=10),
+        yaxis=dict(title="Annual tax (S$)", gridcolor="#EEEEEE",
+                   range=[0, y_max], automargin=True),
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
     )
@@ -396,19 +452,13 @@ with col_gross:
     st.markdown("#### Where every gross dollar goes")
 
     gross_annual  = gross_salary + side_income_mo * 12
-    alloc_labels  = ["CPF (employer not incl.)", "Expenses", "Core investing",
-                     "Satellite", "Savings", "SRS", "Buffer"]
-    alloc_values  = [
-        cpf_annual,
-        total_expenses * 12,
-        core_invest_mo * 12,
-        sat_invest_mo * 12,
-        savings_mo * 12,
-        srs_annual,
-        max(buffer_mo, 0) * 12,
-    ]
-    alloc_colors  = [C["cpf"], C["expenses"], C["core"],
-                     C["satellite"], C["savings"], C["srs"], C["buffer"]]
+    alloc_labels  = ["CPF"] + list(invest_items.keys()) + ["Expenses", "SRS", "Buffer"]
+    alloc_values  = (
+        [cpf_annual]
+        + [v * 12 for v in invest_items.values()]
+        + [total_expenses * 12, srs_annual, max(buffer_mo, 0) * 12]
+    )
+    alloc_colors  = [C["cpf"]] + inv_bar_colors + [C["expenses"], C["srs"], C["buffer"]]
 
     fig_gross = go.Figure(go.Bar(
         x=alloc_labels,
@@ -419,9 +469,11 @@ with col_gross:
         cliponaxis=False,
     ))
     fig_gross.update_layout(
-        height=280, margin=dict(l=0, r=0, t=30, b=10),
-        yaxis=dict(title="% of gross income", gridcolor="#EEEEEE"),
-        xaxis=dict(tickangle=-20),
+        height=300, margin=dict(l=10, r=10, t=40, b=10),
+        yaxis=dict(title="% of gross income", gridcolor="#EEEEEE",
+                   range=[0, (max(alloc_values) / gross_annual * 100 * 1.3) if gross_annual > 0 else 10],
+                   automargin=True),
+        xaxis=dict(tickangle=-20, automargin=True),
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
     )
@@ -458,11 +510,11 @@ fig_cmp.add_annotation(
     xanchor="right",
 )
 fig_cmp.update_layout(
-    height=300, margin=dict(l=0, r=0, t=10, b=10),
+    height=300, margin=dict(l=10, r=20, t=40, b=10),
     xaxis=dict(title="Age", gridcolor="#EEEEEE"),
-    yaxis=dict(title="S$", gridcolor="#EEEEEE", tickformat=",.0f"),
+    yaxis=dict(title="S$", gridcolor="#EEEEEE", tickformat=",.0f", automargin=True),
     plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     hovermode="x unified",
 )
 st.plotly_chart(fig_cmp, use_container_width=True)
@@ -471,22 +523,25 @@ st.plotly_chart(fig_cmp, use_container_width=True)
 st.markdown("---")
 st.markdown("#### Full summary")
 
+invest_summary_rows  = list(invest_items.keys())
+invest_summary_vals  = [f"S${v:,.0f}" for v in invest_items.values()]
+
 summary_data = {
     "Metric": [
         "Gross salary (annual)", "Side income (annual)", "CPF contribution (annual)",
         "Chargeable income (before SRS)", "SRS contribution (annual)",
         "Chargeable income (after SRS)", "Tax without SRS", "Tax with SRS",
         "Annual tax saving", "Take-home per month", "Total expenses per month",
-        "Core investing per month", "Satellite per month", "Savings per month",
-        "Monthly buffer", "Savings rate",
+        *invest_summary_rows,
+        "Total investments per month", "Monthly buffer", "Savings rate",
     ],
     "Value": [
         f"S${gross_salary:,.0f}", f"S${side_income_mo*12:,.0f}", f"S${cpf_annual:,.0f}",
         f"S${ci_before_srs:,.0f}", f"S${srs_annual:,.0f}",
         f"S${ci_after_srs:,.0f}", f"S${tax_before:,.0f}", f"S${tax_after:,.0f}",
         f"S${tax_saved_annual:,.0f}", f"S${take_home_mo:,.0f}", f"S${total_expenses:,.0f}",
-        f"S${core_invest_mo:,.0f}", f"S${sat_invest_mo:,.0f}", f"S${savings_mo:,.0f}",
-        f"S${buffer_mo:,.0f}", f"{savings_rate:.1%}",
+        *invest_summary_vals,
+        f"S${total_invest_mo:,.0f}", f"S${buffer_mo:,.0f}", f"{savings_rate:.1%}",
     ],
 }
 st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
